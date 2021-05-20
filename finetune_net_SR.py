@@ -121,8 +121,8 @@ def main():
 
 	#positional lambda, mu for HQS, set as free trainable parameters here.
 
-	ab_buffer = np.loadtxt('./data/ab.txt').reshape((patch_num[0],patch_num[1],2*stage,3)).astype(np.float32)
-	#ab_buffer = np.ones((patch_num[0],patch_num[1],2*stage,3),dtype=np.float32)*0.1
+	#ab_buffer = np.loadtxt('./data/ab.txt').reshape((patch_num[0],patch_num[1],2*stage,3)).astype(np.float32)
+	ab_buffer = np.ones((patch_num[0],patch_num[1],2*stage,3),dtype=np.float32)*0.1
 	ab = torch.tensor(ab_buffer,device=device,requires_grad=True)
 	params = []
 	params += [{"params":[ab],"lr":0.0005}]
@@ -133,7 +133,7 @@ def main():
 	scheduler = torch.optim.lr_scheduler.StepLR(optimizer,step_size=1000,gamma=0.9)
 
 	#3.load training data
-	imgs_H = glob.glob('/home/xiu/databag/deblur/images/DIV2K_train/*.png',recursive=True)
+	imgs_H = glob.glob('./DIV2K_train/*.png',recursive=True)
 	imgs_H.sort()
 
 	global_iter = 0
