@@ -113,7 +113,8 @@ def blockConv2d(image,kernels,expand=0):
 	patch_size = (W-expand*2)//grid_w
 	to_pad = k_size//2 - expand
 	image_pad = np.pad(image,((to_pad,to_pad),(to_pad,to_pad),(0,0)))
-	output = np.zeros((W-expand*2,H-expand*2,C),np.float32)
+	#output = np.zeros((W-expand*2,H-expand*2,C),np.float32)
+	output = np.zeros((W, H, C), np.float32)
 	for w_ in range(grid_w):
 		for h_ in range(grid_h):
 			x_start = w_*patch_size

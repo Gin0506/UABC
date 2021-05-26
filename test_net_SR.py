@@ -16,6 +16,15 @@ from models.uabcnet import UABCNet as net
 from models.crop_patch import ImgPatches as imgpatch
 
 np.random.seed(15)
+from skimage.metrics import structural_similarity as ssim
+from skimage.metrics import peak_signal_noise_ratio as psnr
+
+def cal_psnrssim(img_gt,img_hat,range):
+
+    H,W,C=img_gt.shape
+    img_hat_psnr=psnr(img_gt,img_hat,data_range=range)
+    img_hat_ssim = ssim(img_gt,img_hat,data_range=range,multichannel=True)
+    return img_hat_psnr,img_hat_ssim
 
 def load_kernels(kernel_path):
 	kernels = []
@@ -53,6 +62,9 @@ def gaussian_kernel_map(patch_num):
 			PSF[w_,h_,...,2] = util_deblur.gen_kernel()
 	return PSF
 
+def save_any8img(img,imgpath):
+
+    cv2.imencode('.png', img.astype(np.uint8))[1].tofile(imgpath)
 
 def draw_training_pair(image_H,psf,sf,patch_num,patch_size,image_L=None):
 	w,h = image_H.shape[:2]
@@ -170,8 +182,9 @@ def main():
 		img_idx = np.random.randint(len(imgs_H))
 
 		img_H = cv2.imread(imgs_H[img_idx])
-		croppatch = imgpatch(img_H, 128, 128, 0)
+		croppatch = imgpatch(img_H, 256, 256, 0)
 		patches = croppatch.crop(img_H, 1)
+		patch_E_list=[]
 
 		# patch_L,patch_H,patch_psf = draw_training_pair(img_H,PSF_grid,sf,patch_num,patch_size)
 
@@ -200,9 +213,14 @@ def main():
 
 			patch_L = cv2.resize(patch_L,dsize=None,fx=sf,fy=sf,interpolation=cv2.INTER_NEAREST)
 			patch_E = util.tensor2uint((x_E))
-		img_E = croppatch.merge(patch_E)
-		psnr = cv2.PSNR(img_E,img_H)
+			patch_E_list.append(patch_E[np.newaxis,:])
+
+		img_E = croppatch.merge(patch_E_list)
+		psnr,ssim = cal_psnrssim(img_E,img_H,255)
 		#psnr = cv2.PSNR(patch_E,patch_H)
+		show = np.hstack((img_H, img_E))
+		cv2.imshow('H,L,E', show)
+
 		all_PSNR.append(psnr)
 
 		show = np.hstack((patch_H,patch_L,patch_E))
