@@ -50,16 +50,6 @@ def draw_training_pair(image_H,psf,sf,patch_num,patch_size,image_L=None):
 	gx,gy = psf.shape[:2]
 	px_start = np.random.randint(0,gx-patch_num[0]+1)
 	py_start = np.random.randint(0,gy-patch_num[1]+1)
-	#wether or not to focus on edges.
-	# mode = np.random.randint(5)
-	# if mode==0:
-	# 	px_start = 0
-	# if mode==1:
-	# 	px_start = gx-patch_num[0]
-	# if mode==2:
-	# 	py_start = 0
-	# if mode==3:
-	# 	py_start = gy-patch_num[1]
 
 	psf_patch = psf[px_start:px_start+patch_num[0],py_start:py_start+patch_num[1]]
 	patch_size_H = [patch_size[0]*sf,patch_size[1]*sf]
@@ -72,7 +62,6 @@ def draw_training_pair(image_H,psf,sf,patch_num,patch_size,image_L=None):
 		patch_H = image_H[x_start:x_start+patch_size_H[0]*patch_num[0]+conv_expand*2,\
 		y_start:y_start+patch_size_H[1]*patch_num[1]+conv_expand*2]
 		patch_L = util_deblur.blockConv2d(patch_H,psf_patch,conv_expand)
-
 		patch_H = patch_H[conv_expand:-conv_expand,conv_expand:-conv_expand]
 		patch_L = patch_L[::sf,::sf]
 
@@ -122,7 +111,9 @@ def main():
 	#positional lambda, mu for HQS, set as free trainable parameters here.
 
 	#ab_buffer = np.loadtxt('./data/ab.txt').reshape((patch_num[0],patch_num[1],2*stage,3)).astype(np.float32)
-	ab_buffer = np.ones((patch_num[0],patch_num[1],2*stage,3),dtype=np.float32)*0.1
+	ab_buffer = np.ones((patch_num[0],patch_num[1],2*stage,3),dtype=np.float32)
+	ab_buffer[...,::2,:]=0.01
+	ab_buffer[...,1::2, :]=0.1
 	ab = torch.tensor(ab_buffer,device=device,requires_grad=True)
 	params = []
 	params += [{"params":[ab],"lr":0.0005}]
@@ -151,14 +142,6 @@ def main():
 		img_idx = np.random.randint(len(imgs_H))
 
 		img_H = cv2.imread(imgs_H[img_idx])
-
-		#img2 = imgs_L[img_idx]
-		#img_L = cv2.imread(img2)
-		#draw random patch from image
-		#a. without img_L
-
-		#draw random kernel
-
 
 		patch_L,patch_H,patch_psf = draw_training_pair(img_H,PSF_grid,sf,patch_num,patch_size)
 		#b.	with img_L
@@ -204,11 +187,16 @@ def main():
 		key = cv2.waitKey(1)
 		global_iter+= 1
 
-		if key==ord('q'):
-			break
-		if key==ord('s'):
-			ab_numpy = ab.detach().cpu().numpy().flatten()
-			np.savetxt('./data/ab.txt',ab_numpy)
+		if i % 500 ==0:
+			cv2.imwrite(os.path.join('./result', 'test' , 'resultE-{:04d}.png'.format(i + 1)), patch_E)
+			cv2.imwrite(os.path.join('./result', 'test', 'resultL-{:04d}.png'.format(i + 1)), patch_L)
+			cv2.imwrite(os.path.join('./result', 'test', 'resultH-{:04d}.png'.format(i + 1)), patch_H)
+
+		# if key==ord('q'):
+		# 	break
+		# if key==ord('s'):
+		# 	ab_numpy = ab.detach().cpu().numpy().flatten()
+		# 	np.savetxt('./data/ab.txt',ab_numpy)
 
 
 	ab_numpy = ab.detach().cpu().numpy().flatten()

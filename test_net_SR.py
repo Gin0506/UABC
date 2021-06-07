@@ -116,13 +116,8 @@ def draw_testing_pair(image_H,psf,sf,patch_num,patch_size):
 	psf_patch = psf[px_start:px_start+patch_num[0],py_start:py_start+patch_num[1]]
 	patch_size_H = [patch_size[0]*sf,patch_size[1]*sf]
 
-
-	#generate image_L on-the-fly
 	conv_expand = psf.shape[2]//2
-#	x_start = np.random.randint(0,w-patch_size_H[0]*patch_num[0]-conv_expand*2+1)
-#	y_start = np.random.randint(0,h-patch_size_H[1]*patch_num[1]-conv_expand*2+1)
-#	patch_H = image_H[x_start:x_start+patch_size_H[0]*patch_num[0]+conv_expand*2,\
-#	y_start:y_start+patch_size_H[1]*patch_num[1]+conv_expand*2]
+
 	patch_H = image_H[0]
 	patch_L = util_deblur.blockConv2d(patch_H,psf_patch,conv_expand)
 
@@ -182,14 +177,17 @@ def main():
 		img_idx = np.random.randint(len(imgs_H))
 
 		img_H = cv2.imread(imgs_H[img_idx])
-		croppatch = imgpatch(img_H, 256, 256, 0)
+		img_H = np.pad(img_H,[(12,12),(12,12),(0,0)])
+		croppatch = imgpatch(img_H, 280, 280, 24)
 		patches = croppatch.crop(img_H, 1)
-		patch_E_list=[]
 
+		patch_E_list=[]
+		patch_L_list=[]
 		# patch_L,patch_H,patch_psf = draw_training_pair(img_H,PSF_grid,sf,patch_num,patch_size)
 
 		for piece in range(len(patches)):
 			patch_L, patch_H, patch_psf = draw_testing_pair(patches[piece], PSF_grid, sf, patch_num, patch_size)
+
 			x = util.uint2single(patch_L)
 			x = util.single2tensor4(x)
 			x_gt = util.uint2single(patch_H)
@@ -213,18 +211,26 @@ def main():
 
 			patch_L = cv2.resize(patch_L,dsize=None,fx=sf,fy=sf,interpolation=cv2.INTER_NEAREST)
 			patch_E = util.tensor2uint((x_E))
-			patch_E_list.append(patch_E[np.newaxis,:])
 
+			patch_E_list.append(patch_E[np.newaxis,:])
+			patch_L_list.append((patch_L[None,...]))
+			print(piece)
 		img_E = croppatch.merge(patch_E_list)
+		# croppatch_E = imgpatch(np.zeros_like(img_H), 256, 256, 0)
+		# croppatch_E.crop(np.zeros_like(img_H),1)
+		# img_E = croppatch_E.merge(patch_E_list)
+
 		psnr,ssim = cal_psnrssim(img_E,img_H,255)
-		#psnr = cv2.PSNR(patch_E,patch_H)
-		show = np.hstack((img_H, img_E))
-		cv2.imshow('H,L,E', show)
+		print(psnr)
+		print(ssim)
+
+		cv2.imwrite(os.path.join('./result',out_folder,'resultE-{:04d}.png'.format(i+1)),img_E)
+		cv2.imwrite(os.path.join('./result',out_folder,'resultH-{:04d}.png'.format(i+1)),img_H)
 
 		all_PSNR.append(psnr)
 
-		show = np.hstack((patch_H,patch_L,patch_E))
-		#cv2.imwrite(os.path.join('./result',out_folder,'result-{:04d}.png'.format(i+1)),show)
+		#show = np.hstack((patch_H,patch_L,patch_E))
+
 	np.savetxt(os.path.join('./result',out_folder,'psnr.txt'),all_PSNR)
 
 if __name__ == '__main__':

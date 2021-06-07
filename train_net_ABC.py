@@ -47,7 +47,7 @@ def main():
 	# ----------------------------------------
 	# load training data
 	# ----------------------------------------
-	imgs = glob.glob('/home/xiu/databag/deblur/images/*/**.png',recursive=True)
+	imgs = glob.glob('./DIV2K_train/*.png',recursive=True)
 	imgs.sort()
 
 

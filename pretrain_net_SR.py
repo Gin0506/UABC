@@ -13,6 +13,8 @@ import utils.utils_image as util
 import utils.utils_deblur as util_deblur
 import utils.utils_psf as util_psf
 from models.uabcnet import UABCNet as net
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 def load_kernels(kernel_path):
 	kernels = []
@@ -98,9 +100,9 @@ def main():
 	#0. global config
 	#scale factor
 	sf = 4	
-	stage = 8
+	stage = 5
 	patch_size = [32,32]
-	patch_num = [3,3]
+	patch_num = [2,2]
 
 	#1. local PSF
 	#shape: gx,gy,kw,kw,3
@@ -109,7 +111,7 @@ def main():
 
 	#2. local model
 	device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-	model = net(n_iter=8, h_nc=64, in_nc=4, out_nc=3, nc=[64, 128, 256, 512],
+	model = net(n_iter=5, h_nc=64, in_nc=4, out_nc=3, nc=[64, 128, 256, 512],
 					nb=2,sf=sf, act_mode="R", downsample_mode='strideconv', upsample_mode="convtranspose")
 	#model.proj.load_state_dict(torch.load('./data/usrnet_pretrain.pth'),strict=True)
 	model.train()
@@ -129,8 +131,8 @@ def main():
 	scheduler = torch.optim.lr_scheduler.StepLR(optimizer,step_size=1000,gamma=0.9)
 
 	#3.load training data
-	imgs_H = glob.glob('/home/xiu/databag/deblur/images/DIV2K_train/*.png',recursive=True)
-	imgs_L = glob.glob('/home/xiu/databag/deblur/images/DIV2K_lr/*.png', recursive=True)
+	imgs_H = glob.glob('./DIV2K_train/*.png',recursive=True)
+	imgs_L = glob.glob('./DIV2K_lr/*.png', recursive=True)
 	imgs_H.sort()
 	imgs_L.sort()
 
@@ -200,16 +202,16 @@ def main():
 		key = cv2.waitKey(1)
 		global_iter+= 1
 
-		# for logging model weight.
-		# if global_iter % 100 ==0:
-		# 	torch.save(model.state_dict(),'./logs/uabcnet_{}.pth'.format(global_iter))
+		if i % 10000 == 0:
+			cv2.imwrite(os.path.join('./result', 'test', 'hstack-{:04d}.png'.format(i + 1)), show)
+
 
 		if key==ord('q'):
 			break
 		if key==ord('s'):
 			torch.save(model.state_dict(),'./logs/uabcnet.pth')
 
-	torch.save(model.state_dict(),'./logs/uabcnet.pth')
+	torch.save(model.state_dict(),'./logs/uabcnet_final.pth')
 
 if __name__ == '__main__':
 

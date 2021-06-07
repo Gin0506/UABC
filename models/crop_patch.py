@@ -11,10 +11,10 @@ class ImgPatches():
         self.c=C
         self.ps_h = ps_h
         self.ps_w = ps_w
-        overlap_h = int(ps_h*overlap)
-        overlap_w = int(ps_w*overlap)
-        self.step_h = ps_h-int(overlap*ps_h)
-        self.step_w = ps_w-int(overlap*ps_w)
+        overlap_h = int(overlap)
+        overlap_w = int(overlap)
+        self.step_h = ps_h-int(overlap)
+        self.step_w = ps_w-int(overlap)
         self.chunk_h = (H-overlap_h)//(ps_h-overlap_h)*(ps_h-overlap_h)+overlap_h
         self.chunk_w = (W-overlap_w)//(ps_w-overlap_w)*(ps_w-overlap_w)+overlap_w
     def crop(self,img,batchsize=1):
@@ -53,31 +53,42 @@ class ImgPatches():
         chunk_main_patches = patches[:self.patchcount[0]]
         chunk_right_patches = patches[self.patchcount[0]:self.patchcount[0]+self.patchcount[1]]
         chunk_lower_patches = patches[self.patchcount[0]+self.patchcount[1]:self.patchcount[0]+self.patchcount[1]+self.patchcount[2]]
+        right = True if chunk_right_patches.size > 0 else False
+        lower = True if chunk_lower_patches.size > 0 else False
         chunk_corner_patches = patches[-1]
         chunk_main_patches = rearrange(chunk_main_patches,'(p1 p2 p3) s1 s2 s3 -> p1 p2 p3 s1 s2 s3',
                     p1=self.chunkcountshape[0][0],p2=self.chunkcountshape[0][1],p3=self.chunkcountshape[0][2])
-        chunk_right_patches = rearrange(chunk_right_patches,'(p1 p2 p3) s1 s2 s3 -> p1 p2 p3 s1 s2 s3',
-                    p1=self.chunkcountshape[1][0],p2=self.chunkcountshape[1][1],p3=self.chunkcountshape[1][2])
-        chunk_lower_patches = rearrange(chunk_lower_patches,'(p1 p2 p3) s1 s2 s3 -> p1 p2 p3 s1 s2 s3',
-                    p1=self.chunkcountshape[2][0],p2=self.chunkcountshape[2][1],p3=self.chunkcountshape[2][2])
+        if right:
+            chunk_right_patches = rearrange(chunk_right_patches,'(p1 p2 p3) s1 s2 s3 -> p1 p2 p3 s1 s2 s3',
+                        p1=self.chunkcountshape[1][0],p2=self.chunkcountshape[1][1],p3=self.chunkcountshape[1][2])
+        if lower:
+            chunk_lower_patches = rearrange(chunk_lower_patches,'(p1 p2 p3) s1 s2 s3 -> p1 p2 p3 s1 s2 s3',
+                        p1=self.chunkcountshape[2][0],p2=self.chunkcountshape[2][1],p3=self.chunkcountshape[2][2])
         chunk_corner_patches = chunk_corner_patches
         chunk_main = unpatchify(chunk_main_patches,self.chunkshape[0])
-        chunk_right = unpatchify(chunk_right_patches,self.chunkshape[1])
-        chunk_lower = unpatchify(chunk_lower_patches,self.chunkshape[2])
+        if right:
+            chunk_right = unpatchify(chunk_right_patches,self.chunkshape[1])
+        if lower:
+            chunk_lower = unpatchify(chunk_lower_patches,self.chunkshape[2])
         chunk_corner = chunk_corner_patches
         #
         img=np.zeros((self.h,self.w,self.c),dtype=np.float)
         img[:self.chunk_h,:self.chunk_w,:]+=chunk_main
-        img[:self.chunk_h,-self.ps_w:,:]+=chunk_right
-        img[-self.ps_h:,:self.chunk_w,:]+=chunk_lower
+        if right:
+            img[:self.chunk_h,-self.ps_w:,:]+=chunk_right
+        if lower:
+            img[-self.ps_h:,:self.chunk_w,:]+=chunk_lower
         img[-self.ps_h:,-self.ps_w:,:]+=chunk_corner
         #
         weight = np.zeros((self.h,self.w,self.c),dtype=np.float)
         weight[:self.chunk_h,:self.chunk_w,:]+=np.ones_like(chunk_main)
-        weight[:self.chunk_h,-self.ps_w:,:]+=np.ones_like(chunk_right)
-        weight[-self.ps_h:,:self.chunk_w,:]+=np.ones_like(chunk_lower)
+        if right:
+            weight[:self.chunk_h,-self.ps_w:,:]+=np.ones_like(chunk_right)
+        if lower:
+            weight[-self.ps_h:,:self.chunk_w,:]+=np.ones_like(chunk_lower)
         weight[-self.ps_h:,-self.ps_w:,:]+=np.ones_like(chunk_corner)
         img = img / weight
+
         return img
 
 # if __name__=='__main__':

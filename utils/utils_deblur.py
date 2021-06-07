@@ -14,10 +14,11 @@ import random
 #get spatial weight based on PSF spectral radius
 def get_inv_spatial_weight(psf_grid):
 	#N,3,W,H
-	F_psf_grid = torch.rfft(psf_grid,2,onesided=False)
+	F_psf_grid = torch.fft.rfft(psf_grid,2)
+	F_psf_grid = torch.stack([torch.real(F_psf_grid), torch.imag(F_psf_grid)], dim=-1)
 	F_psf_grid_norm = F_psf_grid[...,0]**2 + F_psf_grid[...,1]**2
 	F_psf_grid_norm = torch.mean(F_psf_grid_norm,dim=(2,3))
-
+	#F_psf_grid_norm = torch.mean(F_psf_grid_norm, dim=2)
 	return F_psf_grid_norm
 
 def gen_kernel(k_size=np.array([25, 25]),min_var=0.6, max_var=12.):
@@ -105,16 +106,39 @@ def FFTblur2d(image,kernel):
 	blur = blur.cpu().numpy()[0].transpose(1,2,0)
 	return blur
 
+def blockConv2d_wrap(image,kernels,mode='full'):
+	image = image.astype(np.float32)
+	W,H,C = image.shape
+	grid_w,grid_h,k_size = kernels.shape[:3]
+	patch_size = W//grid_w
+	image_pad = image.copy()
+	#output = np.zeros((W-expand*2,H-expand*2,C),np.float32)
+	output = np.zeros((W, H, C), np.float32)
+	for w_ in range(grid_w):
+		for h_ in range(grid_h):
+			x_start = w_*patch_size
+			x_end = (w_+1)*patch_size
+			y_start = h_*patch_size
+			y_end = (h_+1)*patch_size
+			patch = image_pad[x_start:x_end,y_start:y_end]
+			output[x_start:x_start+patch_size,y_start:y_start+patch_size,0] \
+				= convolve2d(patch[...,0],kernels[w_,h_,:,:,0],mode='same',boundary='wrap')
+			output[x_start:x_start+patch_size,y_start:y_start+patch_size,1] \
+				= convolve2d(patch[...,1],kernels[w_,h_,:,:,1],mode='same',boundary='wrap')
+			output[x_start:x_start+patch_size,y_start:y_start+patch_size,2] \
+				= convolve2d(patch[...,2],kernels[w_,h_,:,:,2],mode='same',boundary='wrap')
+	output = output.astype(np.uint8)
+	return output
 
-def blockConv2d(image,kernels,expand=0):
+def blockConv2d(image,kernels,expand=0,mode='valid'):
 	image = image.astype(np.float32)
 	W,H,C = image.shape
 	grid_w,grid_h,k_size = kernels.shape[:3]
 	patch_size = (W-expand*2)//grid_w
 	to_pad = k_size//2 - expand
 	image_pad = np.pad(image,((to_pad,to_pad),(to_pad,to_pad),(0,0)))
-	#output = np.zeros((W-expand*2,H-expand*2,C),np.float32)
-	output = np.zeros((W, H, C), np.float32)
+	output = np.zeros((W-expand*2,H-expand*2,C),np.float32)
+	#output = np.zeros((W, H, C), np.float32)
 	for w_ in range(grid_w):
 		for h_ in range(grid_h):
 			x_start = w_*patch_size
@@ -124,11 +148,11 @@ def blockConv2d(image,kernels,expand=0):
 			patch = image_pad[x_start:x_end,y_start:y_end]
 
 			output[x_start:x_start+patch_size,y_start:y_start+patch_size,0] \
-				= convolve2d(patch[...,0],kernels[w_,h_,:,:,0],'valid')
+				= convolve2d(patch[...,0],kernels[w_,h_,:,:,0],mode,boundary='wrap')
 			output[x_start:x_start+patch_size,y_start:y_start+patch_size,1] \
-				= convolve2d(patch[...,1],kernels[w_,h_,:,:,1],'valid')
+				= convolve2d(patch[...,1],kernels[w_,h_,:,:,1],mode,boundary='wrap')
 			output[x_start:x_start+patch_size,y_start:y_start+patch_size,2] \
-				= convolve2d(patch[...,2],kernels[w_,h_,:,:,2],'valid')
+				= convolve2d(patch[...,2],kernels[w_,h_,:,:,2],mode,boundary='wrap')
 	output = output.astype(np.uint8)
 	return output
 
