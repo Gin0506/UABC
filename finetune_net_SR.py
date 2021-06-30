@@ -89,7 +89,7 @@ def main():
 	#0. global config
 	#scale factor
 	sf = 4	
-	stage = 8
+	stage = 5
 	patch_size = [32,32]
 	patch_num = [2,2]
 
@@ -100,9 +100,9 @@ def main():
 
 	#2. local model
 	device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-	model = net(n_iter=8, h_nc=64, in_nc=4, out_nc=3, nc=[64, 128, 256, 512],
+	model = net(n_iter=5, h_nc=64, in_nc=4, out_nc=3, nc=[64, 128, 256, 512],
 					nb=2,sf=sf, act_mode="R", downsample_mode='strideconv', upsample_mode="convtranspose")
-	model.load_state_dict(torch.load('./data/uabcnet_final.pth'),strict=True)
+	model.load_state_dict(torch.load('./logs/uabcnet_final.pth'),strict=True)
 	model.train()
 	for _, v in model.named_parameters():
 		v.requires_grad = True
@@ -111,12 +111,16 @@ def main():
 	#positional lambda, mu for HQS, set as free trainable parameters here.
 
 	#ab_buffer = np.loadtxt('./data/ab.txt').reshape((patch_num[0],patch_num[1],2*stage,3)).astype(np.float32)
+	ab_pretrain = np.loadtxt('./logs/ab_pretrain.txt').reshape((1,1,2*stage,3)).astype(np.float32)
+
 	ab_buffer = np.ones((patch_num[0],patch_num[1],2*stage,3),dtype=np.float32)
-	ab_buffer[...,::2,:]=0.01
-	ab_buffer[...,1::2, :]=0.1
+	for xx in range(patch_num[0]):
+		for yy in range(patch_num[1]):
+			ab_buffer[xx,yy] = ab_pretrain[0,0]
+
 	ab = torch.tensor(ab_buffer,device=device,requires_grad=True)
 	params = []
-	params += [{"params":[ab],"lr":0.0005}]
+	params += [{"params":[ab],"lr":0.0001}]
 	for key,value in model.named_parameters():
 		params += [{"params":[value],"lr":1e-6}]
 
@@ -130,7 +134,7 @@ def main():
 	global_iter = 0
 
 	all_PSNR = []
-	N_maxiter = 2000
+	N_maxiter = 4000
 
 	PSF_grid = draw_random_kernel(all_PSFs,patch_num)
 	#def get_train_pairs()
@@ -187,7 +191,7 @@ def main():
 		key = cv2.waitKey(1)
 		global_iter+= 1
 
-		if i % 500 ==0:
+		if i % 1000 ==0:
 			cv2.imwrite(os.path.join('./result', 'test' , 'resultE-{:04d}.png'.format(i + 1)), patch_E)
 			cv2.imwrite(os.path.join('./result', 'test', 'resultL-{:04d}.png'.format(i + 1)), patch_L)
 			cv2.imwrite(os.path.join('./result', 'test', 'resultH-{:04d}.png'.format(i + 1)), patch_H)

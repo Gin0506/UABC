@@ -120,7 +120,10 @@ def main():
 	model = model.to(device)
 
 	#positional lambda, mu for HQS, set as free trainable parameters here.
-	ab_buffer = np.ones((patch_num[0],patch_num[1],2*stage,3),dtype=np.float32)*0.1
+	ab_buffer = np.ones((1,1,2*stage,3),dtype=np.float32)
+	ab_buffer[...,1::2,:] = 0.5
+	ab_buffer[...,::2, :] = np.log(np.exp(1e-3)-1)
+
 	ab = torch.tensor(ab_buffer,device=device,requires_grad=True)
 
 	params = []
@@ -137,7 +140,7 @@ def main():
 	imgs_L.sort()
 
 	global_iter = 0
-	N_maxiter = 200000
+	N_maxiter = 100000
 
 	#def get_train_pairs()
 
@@ -175,7 +178,7 @@ def main():
 		k = torch.cat(k_local,dim=0)
 		[x,x_gt,k] = [el.to(device) for el in [x,x_gt,k]]
 		
-		ab_patch = F.softplus(ab)
+		ab_patch = F.softplus(ab).expand(patch_num[0],patch_num[1],2*stage,3)
 		ab_patch_v = []
 		for h_ in range(patch_num[1]):
 			for w_ in range(patch_num[0]):
@@ -205,13 +208,16 @@ def main():
 		if i % 10000 == 0:
 			cv2.imwrite(os.path.join('./result', 'test', 'hstack-{:04d}.png'.format(i + 1)), show)
 
-
 		if key==ord('q'):
 			break
 		if key==ord('s'):
+			ab_numpy = ab.detach().cpu().numpy().flatten()
+			np.savetxt('./logs/ab_pretrain.txt',ab_numpy)
 			torch.save(model.state_dict(),'./logs/uabcnet.pth')
 
 	torch.save(model.state_dict(),'./logs/uabcnet_final.pth')
+	ab_numpy = ab.detach().cpu().numpy().flatten()
+	np.savetxt('./logs/ab_pretrain.txt', ab_numpy)
 
 if __name__ == '__main__':
 
