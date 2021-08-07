@@ -27,12 +27,18 @@ def load_kernels(kernel_path):
 	return kernels
 
 def draw_random_kernel(kernels,patch_num):
-	psf = kernels[0]
-	psf = psf[:2,:2]
-	#if i<0:
-	#	psf = kernels[i]
-	#else:
-	#	psf = gaussian_kernel_map(patch_num)
+	# psf = kernels[8]
+	# psf = psf[:2,:2]
+	# #if i<0:
+	# #	psf = kernels[i]
+	# #else:
+	# #	psf = gaussian_kernel_map(patch_num)
+	psf = np.loadtxt('E:\Personal\Megapixel\psf\psf_phase_crop.txt').astype(np.float32)
+	psf = psf[...,None].repeat(3,axis=-1)
+	psf = psf[None,...].repeat(2,axis=0)
+	psf = psf[None, ...].repeat(2, axis=0)
+	psf = util_psf.normalize_PSF(psf)
+
 	return psf
 
 def gaussian_kernel_map(patch_num):
@@ -89,7 +95,7 @@ def main():
 	#0. global config
 	#scale factor
 	sf = 4	
-	stage = 5
+	stage = 8
 	patch_size = [32,32]
 	patch_num = [2,2]
 
@@ -100,9 +106,12 @@ def main():
 
 	#2. local model
 	device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-	model = net(n_iter=5, h_nc=64, in_nc=4, out_nc=3, nc=[64, 128, 256, 512],
+	model = net(n_iter=8, h_nc=64, in_nc=7, out_nc=3, nc=[64, 128, 256, 512],
 					nb=2,sf=sf, act_mode="R", downsample_mode='strideconv', upsample_mode="convtranspose")
 	model.load_state_dict(torch.load('./logs/uabcnet_final.pth'),strict=True)
+	#copy the pretrained encoders to N-stages.
+	for i in range(1,stage):
+		model.proj_encoders[i].load_state_dict(model.proj_encoders[0].state_dict())
 	model.train()
 	for _, v in model.named_parameters():
 		v.requires_grad = True
@@ -134,7 +143,7 @@ def main():
 	global_iter = 0
 
 	all_PSNR = []
-	N_maxiter = 4000
+	N_maxiter = 3000
 
 	PSF_grid = draw_random_kernel(all_PSFs,patch_num)
 	#def get_train_pairs()
@@ -171,7 +180,8 @@ def main():
 				ab_patch_v.append(ab_patch[w_:w_+1,h_])
 		ab_patch_v = torch.cat(ab_patch_v,dim=0)
 
-		x_E = model.forward_patchwise_SR(x,k,ab_patch_v,patch_num,[patch_size[0],patch_size[1]],sf)
+		x_E = model.forward_patchwise_SR(x,k,ab_patch_v,patch_num,[patch_size[0],patch_size[1]],sf,True)
+		#x_E = model.forward_patchwise_SR(x, k, ab_patch_v, patch_num, [patch_size[0], patch_size[1]], sf, False)
 
 		loss = F.l1_loss(x_E,x_gt)
 		optimizer.zero_grad()
@@ -192,7 +202,7 @@ def main():
 		global_iter+= 1
 
 		if i % 1000 ==0:
-			cv2.imwrite(os.path.join('./result', 'test' , 'resultE-{:04d}.png'.format(i + 1)), patch_E)
+			cv2.imwrite(os.path.join('./result', 'test', 'resultE-{:04d}.png'.format(i + 1)), patch_E)
 			cv2.imwrite(os.path.join('./result', 'test', 'resultL-{:04d}.png'.format(i + 1)), patch_L)
 			cv2.imwrite(os.path.join('./result', 'test', 'resultH-{:04d}.png'.format(i + 1)), patch_H)
 

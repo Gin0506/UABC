@@ -1,4 +1,7 @@
 import torch
+import  torch.nn.functional as F
+
+
 import numpy as np
 from numpy import zeros, ones, prod, array, pi, log, min, mod, arange, sum, mgrid, exp, pad, round
 from numpy.random import randn, rand
@@ -8,6 +11,7 @@ from scipy import fftpack
 from math import cos, sin
 import cv2
 import random
+
 
 
 
@@ -156,6 +160,27 @@ def blockConv2d(image,kernels,expand=0,mode='valid'):
 	output = output.astype(np.uint8)
 	return output
 
+#GPU version
+def blockConv2dGPU(image,kernels,expand=0):
+	#require tensor
+	_,C,W,H = image.shape
+	grid_w,grid_h = kernels.shape[:2]
+	k_size = kernels.shape[-1]
+	patch_size = (W-expand*2)//grid_w
+	to_pad = k_size//2 - expand
+	image_pad = torch.nn.ZeroPad2d(to_pad)(image)
+	output = torch.zeros((C,W-expand*2,H-expand*2),device=image.device)
+	for w_ in range(grid_w):
+		for h_ in range(grid_h):
+			x_start = w_*patch_size
+			x_end = (w_+1)*patch_size + k_size//2*2
+			y_start = h_*patch_size
+			y_end = (h_+1)*patch_size + k_size//2*2
+			patch = image_pad[...,x_start:x_end,y_start:y_end]
+			weight = kernels[w_,h_][:,None,...]
+			blur = F.conv2d(patch,weight,bias=None,stride=1,padding=0,groups=3)
+			output[:,x_start:x_start+patch_size,y_start:y_start+patch_size] = blur[0]
+	return output
 '''
 Linear interpolation of kernel for pixel-wise conv
 however, it seems to be wrong.

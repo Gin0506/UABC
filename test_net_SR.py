@@ -1,3 +1,4 @@
+import numpy
 import torch
 import torch.optim
 import torch.nn.functional as F
@@ -13,6 +14,8 @@ import utils.utils_image as util
 import utils.utils_deblur as util_deblur
 import utils.utils_psf as util_psf
 from models.uabcnet import UABCNet as net
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 np.random.seed(15)
 
@@ -29,18 +32,27 @@ def load_kernels(kernel_path):
 
 
 def using_AC254_lens(kernels, patch_num):
-    psf = kernels[0]
+    # PSF_grid = np.load('./data/AC254-075-A-ML-Zemax(ZMX).npz')['PSF']
+    # PSF_grid = util_psf.normalize_PSF(PSF_grid)
+    psf = kernels[8]
+    # psf = gaussian_kernel_map(patch_num)
     psf = psf[:patch_num[0], :patch_num[1]]
     return psf
 
 
 def draw_random_kernel(kernels, patch_num):
-    n = len(kernels)
-    i = np.random.randint(2 * n)
-    if i < 0:
-        psf = kernels[i]
-    else:
-        psf = gaussian_kernel_map(patch_num)
+    # n = len(kernels)
+    # i = np.random.randint(2 * n)
+    # if i < 0:
+    #     psf = kernels[i]
+    # else:
+    #     psf = gaussian_kernel_map(patch_num)
+
+    psf = np.loadtxt('E:\Personal\Megapixel\psf\psf_phase_crop.txt').astype(np.float32)
+    psf = psf[..., None].repeat(3, axis=-1)
+    psf = psf[None, ...].repeat(2, axis=0)
+    psf = psf[None, ...].repeat(2, axis=0)
+    psf = util_psf.normalize_PSF(psf)
     return psf
 
 
@@ -100,9 +112,10 @@ def main():
     # 0. global config
     # scale factor
     sf = 4
-    stage = 5
+    stage = 8
     patch_size = [32, 32]
     patch_num = [2, 2]
+
 
     # 1. local PSF
     # shape: gx,gy,kw,kw,3
@@ -110,10 +123,10 @@ def main():
 
     # 2. local model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = net(n_iter=5, h_nc=64, in_nc=4, out_nc=3, nc=[64, 128, 256, 512],
+    model = net(n_iter=8, h_nc=64, in_nc=7, out_nc=3, nc=[64, 128, 256, 512],
                 nb=2, sf=sf, act_mode="R", downsample_mode='strideconv', upsample_mode="convtranspose")
-    loaded_state_dict=  torch.load('./logs/uabcnet_final.pth')
-    # loaded_state_dict = torch.load('./data/uabcnet_finetune.pth')
+    loaded_state_dict = torch.load('./logs/uabcnet_final.pth')
+    #loaded_state_dict = torch.load('./data/uabcnet_finetune.pth')
     model.load_state_dict(loaded_state_dict, strict=True)
     model.eval()
     for _, v in model.named_parameters():
@@ -130,7 +143,17 @@ def main():
             ab_buffer[xx, yy] = ab_pretrain[0, 0]
 
     ab = torch.tensor(ab_buffer, device=device, requires_grad=False)
+
+    # # show development of ab_value
     # ab = F.softplus(ab)
+    # import  matplotlib.pyplot as plt
+    # ab_numpy = ab.detach().cpu().numpy()
+    # plt.subplot(121)
+    # plt.plot(ab_numpy[0,0,::2])
+    # plt.subplot(122)
+    # plt.plot(ab_numpy[0, 0, 1::2])
+    # plt.show()
+    # return
 
     # 3.load training data
     imgs_H = glob.glob('./DIV2K_train/*.png', recursive=True)
@@ -168,19 +191,33 @@ def main():
         ab_patch_v = []
         for h_ in range(patch_num[1]):
             for w_ in range(patch_num[0]):
-                ab_patch_v.append(ab_patch[w_:w_ + 1, h_])
+                ab_patch_v.append(ab_patch[w_, h_].unsqueeze(0))
         ab_patch_v = torch.cat(ab_patch_v, dim=0)
 
-        x_E = model.forward_patchwise_SR(x, k, ab_patch_v, patch_num, [patch_size[0], patch_size[1]], sf)
+        # x_E,outputs,x_init = model.forward_patchwise_SR(x, k, ab_patch_v, patch_num, [patch_size[0], patch_size[1]], sf)
+        x_E = model.forward_patchwise_SR(x, k, ab_patch_v, patch_num, [patch_size[0], patch_size[1]],sf)
 
         patch_L = cv2.resize(patch_L, dsize=None, fx=sf, fy=sf, interpolation=cv2.INTER_NEAREST)
-        patch_E = util.tensor2uint((x_E))
+
+        patch_E = util.tensor2uint(x_E)
+
+        # outputs = [util.tensor2uint(elem) for elem in outputs]
+        # x_init = util.tensor2uint(x_init)
+        # z_all = numpy.hstack(outputs[::2])
+        # x_all = numpy.hstack(outputs[1::2])
+        # cv2.imshow('z_all', z_all)
+        # cv2.imshow('x_all', x_all)
 
         psnr = cv2.PSNR(patch_E, patch_H)
         all_PSNR.append(psnr)
 
         show = np.hstack((patch_H, patch_L, patch_E))
-        if i % 250 == 0:
+
+        cv2.imshow('x_init',x_init)
+        cv2.waitKey(-1)
+
+        if (i - 994) > 0:
+            # pass
             cv2.imwrite(os.path.join('./result', 'finetune', 'result-{:04d}.png'.format(i + 1)), show)
 
     cv2.imwrite(os.path.join('./result','finetune','result-{:04d}.png'.format(i+1)), show)

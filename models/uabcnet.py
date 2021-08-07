@@ -141,8 +141,8 @@ class ResUNet_encoder(nn.Module):
                  upsample_mode='convtranspose'):
         super(ResUNet_encoder, self).__init__()
 
-        # self.m_head = B.conv(in_nc, nc[0],kernel_size=7,padding=3, bias=False, mode='C')
-        self.m_head = B.conv(in_nc, nc[0], bias=False, mode='C')
+        self.m_head = B.conv(in_nc, nc[0],kernel_size=7,padding=3, bias=False, mode='C')
+
         # downsample
         if downsample_mode == 'avgpool':
             downsample_block = B.downsample_avgpool
@@ -200,22 +200,15 @@ class ResUNet_decoder(nn.Module):
             B.ResBlock(nc[1], nc[1], bias=False, mode='C' + act_mode + 'C') for _ in range(nb)])
         self.m_up1 = B.sequential(upsample_block(nc[1], nc[0], bias=False, mode='2'), *[
             B.ResBlock(nc[0], nc[0], bias=False, mode='C' + act_mode + 'C') for _ in range(nb)])
-
-        # self.m_tail = B.conv(nc[0], out_nc,kernel_size=7,padding=3, bias=False, mode='C')
-        self.m_tail = B.conv(nc[0], out_nc, bias=False, mode='C')
-        self.m_final1 = B.conv(
-            out_nc, out_nc, kernel_size=1, bias=False, mode='C')
-        self.m_final2 = B.conv(
-            out_nc, out_nc, kernel_size=1, bias=False, mode='C')
+        self.m_tail = B.conv(nc[0], out_nc,kernel_size=7,padding=3,bias=False, mode='C')
 
     def forward(self, x_enc):
         x, x4, x3, x2, x1, h, w = x_enc
+
         x = self.m_up3(x + x4)
         x = self.m_up2(x + x3)
         x = self.m_up1(x + x2)
         x = self.m_tail(x + x1)
-        x = self.m_final1(x)
-        x = self.m_final2(x)
         x = x[..., :h, :w]
         return x
 
@@ -260,7 +253,7 @@ class RefSR(nn.Module):
 
 
 class UABCNet(nn.Module):
-    def __init__(self, n_iter=5, h_nc=64, in_nc=4, out_nc=3, nc=[64, 128, 256, 512], nb=2, sf=4, act_mode='R',
+    def __init__(self, n_iter=8, h_nc=64, in_nc=7, out_nc=3, nc=[64, 128, 256, 512], nb=2, sf=4, act_mode='R',
                  downsample_mode='strideconv', upsample_mode='convtranspose'):
         super(UABCNet, self).__init__()
         if sf == 1:
@@ -324,7 +317,7 @@ class UABCNet(nn.Module):
         x_patches = torch.cat(x_patches, dim=0)
         return x_patches
 
-    def forward_patchwise_SR(self, y, k, ab, patch_num=[2, 2], patch_size=[128, 128], sf=4):
+    def forward_patchwise_SR(self, y, k, ab, patch_num=[2, 2], patch_size=[128, 128], sf=4,is_pretrain=True):
         # only batch-size=1 is supported currently.
         W, H = y.shape[-2:]
         w_pad = (W - patch_num[0] * patch_size[0]) // 2
@@ -336,6 +329,9 @@ class UABCNet(nn.Module):
         F2k_all = []
         FkCFy_all = []
         y_init_all = []
+
+        outputs = []
+
 
         for h_ in range(patch_num[1]):
             for w_ in range(patch_num[0]):
@@ -362,6 +358,8 @@ class UABCNet(nn.Module):
 
         edge_width = 2
 
+        # x_init = x.detach()
+
         for i in range(self.n):
             # chop
             # (1)ref-deconv
@@ -378,19 +376,29 @@ class UABCNet(nn.Module):
             # (2)proj
             z = self.assemble_patches(
                 z_temp, patch_num, [patch_size[0] * sf, patch_size[1] * sf])
-            beta = -torch.ones((1, 3, z.size(2), z.size(3)), device=z.device)
+            beta = torch.empty((1, 3, z.size(2), z.size(3)), device=z.device)
+            pe = torch.ones(1, 1, z.size(2), z.size(3), device=z.device)
             for h_ in range(patch_num[1]):
                 for w_ in range(patch_num[0]):
                     idx = w_ + h_ * patch_num[0]
                     for c in range(3):
-                        beta[0, 0, w_ * patch_size[0] * sf + edge_width:(w_ + 1) * patch_size[0] * sf + w_pad * 2 * sf - edge_width,
-                        h_ * patch_size[1] * sf:(h_ + 1)+edge_width * patch_size[1] * sf + h_pad * 2 * sf-edge_width] = ab[idx, 2*i+1, c]
+                        beta[0, c,
+                        w_ * patch_size[0] * sf:(w_ + 1) * patch_size[0] * sf,
+                        h_ * patch_size[1] * sf:(h_ + 1) * patch_size[1] * sf] = ab[idx, 2*i+1, c]
 
+                    pe[0, 0,w_ * patch_size[0] * sf+edge_width:(w_ + 1) * patch_size[0] * sf-edge_width,
+                    h_ * patch_size[1] * sf+edge_width:(h_ + 1) * patch_size[1] * sf-edge_width] = 0.
             if self.in_nc == 4:
                 beta = torch.mean(beta, dim=1, keepdim=True)
-            x_enc = self.proj_encoders[i](torch.cat([z, beta[0:1]], dim=1))
+            # outputs.append(z.detach())
+
+            if is_pretrain:
+                x_enc = self.proj_encoders[0](torch.cat([z, beta,pe], dim=1))
+            else:
+                x_enc = self.proj_encoders[i](torch.cat([z, beta,pe], dim=1))
             x = self.proj_decoder(x_enc)
-
-
+            # outputs.append(x.detach())
+        # return x,outputs,x_init
         return x
+
 
